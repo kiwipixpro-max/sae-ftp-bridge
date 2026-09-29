@@ -50,7 +50,7 @@ app.post('/api/generate', async (req: Request, res: Response) => {
         }
 
         // Call Gemini API (using gemini-2.5-flash or your preferred model)
-        const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+        const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
