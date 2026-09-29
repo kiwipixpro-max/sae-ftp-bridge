@@ -39,6 +39,45 @@ app.post('/api/deploy', async (req: Request, res: Response) => {
     }
 });
 
+// Add this route to server.ts in sae-ftp-bridge
+app.post('/api/generate', async (req: Request, res: Response) => {
+    try {
+        const { prompt, pageTitle, slogan } = req.body;
+        const apiKey = process.env.GEMINI_API_KEY;
+
+        if (!apiKey) {
+            return res.status(500).json({ success: false, error: 'GEMINI_API_KEY is not set on the server.' });
+        }
+
+        // Call Gemini API (using gemini-2.5-flash or your preferred model)
+        const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [{
+                        text: `You are an expert web developer and designer. Generate a complete, standalone, beautiful HTML5 page (including internal CSS style block) based on this user prompt: "${prompt}". 
+                        Use these details as the core content:
+                        - Page Title: "${pageTitle}"
+                        - Slogan: "${slogan}"
+                        Return ONLY valid raw HTML code starting with <!DOCTYPE html>. Do not wrap it in markdown code blocks or conversational text.`
+                    }]
+                }]
+            })
+        });
+
+        const data = await geminiResponse.json();
+        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        
+        // Clean up any accidental markdown formatting if the model returns it
+        const cleanHtml = rawText.replace(/```html/g, '').replace(/```/g, '').trim();
+
+        res.json({ success: true, html: cleanHtml });
+    } catch (error: any) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`SAE FTP bridge listening on port ${PORT}`);
