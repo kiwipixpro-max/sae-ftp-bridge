@@ -59,7 +59,7 @@ app.post('/api/generate', async (req: Request, res: Response) => {
                 'X-Title': 'SAE Hub'
             },
             body: JSON.stringify({
-                model: 'google/gemini-1.5-flash', // Easily swap this to 'anthropic/claude-3.5-sonnet' later!
+                model: 'anthropic/claude-3.5-sonnet', // Easily swap this to 'anthropic/claude-3.5-sonnet' later!
                 messages: [{
                     role: 'user',
                     content: `You are an expert web developer and designer. Generate a complete, standalone, beautiful HTML5 page (including internal CSS style block) based on this user prompt: "${prompt}". 
