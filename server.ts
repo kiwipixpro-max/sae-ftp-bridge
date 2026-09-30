@@ -67,7 +67,6 @@ app.post('/api/generate', async (req: Request, res: Response) => {
 
         const data = await geminiResponse.json();
 
-        // Check if Google returned an error response
         if (!geminiResponse.ok) {
             return res.status(500).json({ success: false, error: data.error?.message || 'Unknown Google AI Error' });
         }
