@@ -49,7 +49,6 @@ app.post('/api/generate', async (req: Request, res: Response) => {
             return res.status(500).json({ success: false, error: 'GEMINI_API_KEY is not set on the server.' });
         }
 
-        // Call Gemini API (using gemini-2.5-flash or your preferred model)
         const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -67,9 +66,13 @@ app.post('/api/generate', async (req: Request, res: Response) => {
         });
 
         const data = await geminiResponse.json();
+
+        // Check if Google returned an error response
+        if (!geminiResponse.ok) {
+            return res.status(500).json({ success: false, error: data.error?.message || 'Unknown Google AI Error' });
+        }
+
         const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        
-        // Clean up any accidental markdown formatting if the model returns it
         const cleanHtml = rawText.replace(/```html/g, '').replace(/```/g, '').trim();
 
         res.json({ success: true, html: cleanHtml });
