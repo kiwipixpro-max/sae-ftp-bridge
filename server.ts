@@ -49,7 +49,7 @@ app.post('/api/generate', async (req: Request, res: Response) => {
             return res.status(500).json({ success: false, error: 'GEMINI_API_KEY is not set on the server.' });
         }
 
-        const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+        const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
