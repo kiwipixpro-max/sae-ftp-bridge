@@ -43,36 +43,42 @@ app.post('/api/deploy', async (req: Request, res: Response) => {
 app.post('/api/generate', async (req: Request, res: Response) => {
     try {
         const { prompt, pageTitle, slogan } = req.body;
-        const apiKey = process.env.GEMINI_API_KEY;
+        const apiKey = process.env.OPENROUTER_API_KEY;
 
         if (!apiKey) {
-            return res.status(500).json({ success: false, error: 'GEMINI_API_KEY is not set on the server.' });
+            return res.status(500).json({ success: false, error: 'OPENROUTER_API_KEY is not set on the server.' });
         }
 
-        const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
+        // Calling OpenRouter instead of Google directly!
+        const openRouterResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+                'HTTP-Referer': 'https://sae-ftp-bridge.onrender.com', // Best practice for OpenRouter
+                'X-Title': 'SAE Hub'
+            },
             body: JSON.stringify({
-                contents: [{
-                    parts: [{
-                        text: `You are an expert web developer and designer. Generate a complete, standalone, beautiful HTML5 page (including internal CSS style block) based on this user prompt: "${prompt}". 
-                        Use these details as the core content:
-                        - Page Title: "${pageTitle}"
-                        - Slogan: "${slogan}"
-                        Return ONLY valid raw HTML code starting with <!DOCTYPE html>. Do not wrap it in markdown code blocks or conversational text.`
-                    }]
+                model: 'google/gemini-1.5-flash', // Easily swap this to 'anthropic/claude-3.5-sonnet' later!
+                messages: [{
+                    role: 'user',
+                    content: `You are an expert web developer and designer. Generate a complete, standalone, beautiful HTML5 page (including internal CSS style block) based on this user prompt: "${prompt}". 
+                    Use these details as the core content:
+                    - Page Title: "${pageTitle}"
+                    - Slogan: "${slogan}"
+                    Return ONLY valid raw HTML code starting with <!DOCTYPE html>. Do not wrap it in markdown code blocks or conversational text.`
                 }]
             })
         });
 
-        const data = await geminiResponse.json();
+        const data = await openRouterResponse.json();
 
-        // Check if Google returned an error response
-        if (!geminiResponse.ok) {
-            return res.status(500).json({ success: false, error: data.error?.message || 'Unknown Google AI Error' });
+        if (!openRouterResponse.ok) {
+            return res.status(500).json({ success: false, error: data.error?.message || 'OpenRouter API Error' });
         }
 
-        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        // OpenRouter uses the standard OpenAI response structure
+        const rawText = data.choices?.[0]?.message?.content || '';
         const cleanHtml = rawText.replace(/```html/g, '').replace(/```/g, '').trim();
 
         res.json({ success: true, html: cleanHtml });
