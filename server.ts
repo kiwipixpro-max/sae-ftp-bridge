@@ -58,7 +58,7 @@ app.post('/api/generate', async (req: Request, res: Response) => {
                 'X-Title': 'SAE Webpage Generator'
             },
             body: JSON.stringify({
-                model: 'anthropic/claude-3.5-sonnet-20240620',
+                model: 'anthropic/claude-3.5-sonnet',
                 messages: [{
                     role: 'user',
                     content: `You are an expert web developer and designer. Generate a complete, standalone, beautiful HTML5 page (including internal CSS style block) based on this user prompt: "${prompt}". 
