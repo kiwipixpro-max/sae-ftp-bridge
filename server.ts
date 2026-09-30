@@ -42,12 +42,29 @@ app.post('/api/deploy', async (req: Request, res: Response) => {
 // Add this route to server.ts in sae-ftp-bridge
 app.post('/api/generate', async (req: Request, res: Response) => {
     try {
-        const { prompt, pageTitle, slogan } = req.body;
+        const { prompt, pageTitle, slogan, currentHtml } = req.body;
         const apiKey = process.env.OPENROUTER_API_KEY;
 
         if (!apiKey) {
             return res.status(500).json({ success: false, error: 'OPENROUTER_API_KEY is not set on the server.' });
         }
+
+        // DYNAMIC PROMPT: If code already exists, tell the AI to modify it. If not, build from scratch.
+        const systemInstructions = currentHtml && currentHtml.length > 50
+            ? `You are an expert web developer. Modify the existing HTML code below exactly as requested by this user prompt: "${prompt}".
+               Ensure the core details remain intact unless specifically asked to change them:
+               - Page Title: "${pageTitle}"
+               - Slogan / Headline: "${slogan}"
+               
+               Existing HTML to modify:
+               ${currentHtml}
+               
+               Return ONLY valid raw HTML code starting with <!DOCTYPE html>. Do not wrap it in markdown code blocks or conversational text.`
+            : `You are an expert web developer and designer. Generate a complete, standalone, beautiful HTML5 page (including internal CSS style block) based on this user prompt: "${prompt}".
+               Use these details as the core content:
+               - Page Title: "${pageTitle}"
+               - Slogan: "${slogan}"
+               Return ONLY valid raw HTML code starting with <!DOCTYPE html>. Do not wrap it in markdown code blocks or conversational text.`;
 
         const openRouterResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
@@ -61,11 +78,7 @@ app.post('/api/generate', async (req: Request, res: Response) => {
                 model: 'openai/gpt-4o-mini',
                 messages: [{
                     role: 'user',
-                    content: `You are an expert web developer and designer. Generate a complete, standalone, beautiful HTML5 page (including internal CSS style block) based on this user prompt: "${prompt}". 
-                    Use these details as the core content:
-                    - Page Title: "${pageTitle}"
-                    - Slogan: "${slogan}"
-                    Return ONLY valid raw HTML code starting with <!DOCTYPE html>. Do not wrap it in markdown code blocks or conversational text.`
+                    content: systemInstructions
                 }]
             })
         });
