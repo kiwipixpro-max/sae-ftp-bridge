@@ -43,12 +43,16 @@ app.post('/api/deploy', async (req: Request, res: Response) => {
 // Add this route to server.ts in sae-ftp-bridge
 app.post('/api/generate', async (req: Request, res: Response) => {
     try {
-        const { prompt } = req.body;
+        // FIX: We must extract currentHtml alongside the prompt!
+        const { prompt, currentHtml } = req.body; 
         const apiKey = process.env.OPENROUTER_API_KEY;
 
         if (!apiKey) {
             return res.status(500).json({ success: false, error: 'OPENROUTER_API_KEY is missing' });
         }
+
+        // FIX: Combine the instructions and the existing HTML so the AI knows what to modify
+        const fullPrompt = `${prompt}\n\nCURRENT HTML TO MODIFY:\n${currentHtml}`;
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
@@ -57,9 +61,9 @@ app.post('/api/generate', async (req: Request, res: Response) => {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: "openai/gpt-4o", // Back to stable GPT-4o
+                model: "openai/gpt-4o", 
                 messages: [
-                    { role: "user", content: prompt }
+                    { role: "user", content: fullPrompt } // Send the combined text
                 ]
             })
         });
