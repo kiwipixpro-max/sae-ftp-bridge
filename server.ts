@@ -75,7 +75,7 @@ app.post('/api/generate', async (req: Request, res: Response) => {
                 'X-Title': 'SAE Webpage Generator'
             },
             body: JSON.stringify({
-                model: 'openai/gpt-4o-mini',
+                model: 'google/gemini-1.5-flash',
                 messages: [{
                     role: 'user',
                     content: systemInstructions
