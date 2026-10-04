@@ -2,8 +2,6 @@ import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import { Client } from 'basic-ftp';
 import { Readable } from 'stream';
-import * as ftp from "basic-ftp";
-import { Writable } from 'stream';
 
 const app = express();
 app.use(cors());
@@ -82,83 +80,6 @@ app.post('/api/generate', async (req: Request, res: Response) => {
     } catch (error: any) {
         console.error('AI Generation Error:', error);
         return res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-// 1. LIST DIRECTORY CONTENTS
-app.post('/api/ftp/list', async (req: any, res: any) => {
-    const { host, user, password, path = '/' } = req.body;
-    const client = new ftp.Client();
-    try {
-        await client.access({ host, user, password, secure: false });
-        const list = await client.list(path);
-        const formattedList = list.map(item => ({
-            id: `${path === '/' ? '' : path}/${item.name}`,
-            name: item.name,
-            isFolder: item.type === 2, // 2 is a directory
-            size: item.size,
-            modifiedTime: item.modifiedAt
-        }));
-        res.json({ success: true, files: formattedList });
-    } catch (err: any) {
-        res.status(500).json({ success: false, error: err.message });
-    } finally {
-        client.close();
-    }
-});
-
-// 2. READ A FILE
-app.post('/api/ftp/read', async (req: any, res: any) => {
-    const { host, user, password, filePath } = req.body;
-    const client = new ftp.Client();
-    try {
-        await client.access({ host, user, password, secure: false });
-        const stream = new Writable();
-        let fileContent = '';
-        stream._write = function (chunk: any, encoding: any, done: any) {
-            fileContent += chunk.toString();
-            done();
-        };
-        await client.downloadTo(stream, filePath);
-        res.json({ success: true, content: fileContent });
-    } catch (err: any) {
-        res.status(500).json({ success: false, error: err.message });
-    } finally {
-        client.close();
-    }
-});
-
-// 3. CREATE A NEW FOLDER
-app.post('/api/ftp/mkdir', async (req: any, res: any) => {
-    const { host, user, password, folderPath } = req.body;
-    const client = new ftp.Client();
-    try {
-        await client.access({ host, user, password, secure: false });
-        await client.ensureDir(folderPath);
-        res.json({ success: true });
-    } catch (err: any) {
-        res.status(500).json({ success: false, error: err.message });
-    } finally {
-        client.close();
-    }
-});
-
-// 4. DELETE A FILE OR FOLDER
-app.post('/api/ftp/delete', async (req: any, res: any) => {
-    const { host, user, password, targetPath, isFolder } = req.body;
-    const client = new ftp.Client();
-    try {
-        await client.access({ host, user, password, secure: false });
-        if (isFolder) {
-            await client.removeDir(targetPath);
-        } else {
-            await client.remove(targetPath);
-        }
-        res.json({ success: true });
-    } catch (err: any) {
-        res.status(500).json({ success: false, error: err.message });
-    } finally {
-        client.close();
     }
 });
 

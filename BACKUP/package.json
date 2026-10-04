@@ -13,7 +13,7 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "basic-ftp": "^6.2.2",
+    "basic-ftp": "^6.2.1",
     "cors": "^2.8.6",
     "express": "^5.2.1"
   },
