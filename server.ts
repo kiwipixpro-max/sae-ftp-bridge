@@ -1,9 +1,8 @@
 import express, { type Request, type Response } from 'express';
 import cors from 'cors';
+import * as ftp from 'basic-ftp';
 import { Client } from 'basic-ftp';
-import { Readable } from 'stream';
-import * as ftp from "basic-ftp";
-import { Writable } from 'stream';
+import { Readable, Writable } from 'stream';
 
 const app = express();
 app.use(cors());
@@ -159,6 +158,52 @@ app.post('/api/ftp/delete', async (req: any, res: any) => {
         res.status(500).json({ success: false, error: err.message });
     } finally {
         client.close();
+    }
+});
+
+// --- NEW: FTP IMAGE UPLOAD ENDPOINT ---
+app.post('/api/ftp/upload', async (req: any, res: any) => {
+    const { host, user, password, path = '/', filename, fileData } = req.body;
+
+    if (!host || !user || !password || !filename || !fileData) {
+        return res.status(400).json({ success: false, error: 'Missing required FTP credentials or file data.' });
+    }
+
+    const client = new ftp.Client();
+
+    try {
+        // Strip the browser's Base64 MIME prefix
+        const base64String = fileData.replace(/^data:.*?;base64,/, '');
+        
+        // Convert to binary Buffer and then to a Readable Stream
+        const fileBuffer = Buffer.from(base64String, 'base64');
+        const stream = Readable.from(fileBuffer);
+
+        // Connect to FTP
+        await client.access({
+            host: host,
+            user: user,
+            password: password,
+            secure: false 
+        });
+
+        // Ensure directory exists and upload
+        await client.ensureDir(path);
+        await client.uploadFrom(stream, filename);
+        client.close();
+
+        // Construct public URL
+        const baseUrl = host.toLowerCase().startsWith('ftp.') ? host.substring(4) : host;
+        const publicUrl = `https://${baseUrl}${path.endsWith('/') ? path : path + '/'}${filename}`;
+
+        return res.json({ success: true, publicUrl: publicUrl });
+
+    } catch (error: any) {
+        console.error('FTP Upload Error:', error);
+        if (!client.closed) {
+            client.close();
+        }
+        return res.status(500).json({ success: false, error: error.message || 'Failed to upload to FTP server.' });
     }
 });
 
