@@ -3,14 +3,10 @@ import cors from 'cors';
 import * as ftp from 'basic-ftp';
 import { Client } from 'basic-ftp';
 import { Readable, Writable } from 'stream';
-import multer from 'multer';
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
-
-// Configure multer for memory storage to handle multipart/form-data uploads
-const upload = multer({ storage: multer.memoryStorage() });
 
 app.post('/api/deploy', async (req: Request, res: Response) => {
     const { host, user, password, htmlString, targetFolder = 'public_html' } = req.body;
@@ -44,8 +40,10 @@ app.post('/api/deploy', async (req: Request, res: Response) => {
     }
 });
 
+// Add this route to server.ts in sae-ftp-bridge
 app.post('/api/generate', async (req: Request, res: Response) => {
     try {
+        // FIX: We must extract currentHtml alongside the prompt!
         const { prompt, currentHtml } = req.body; 
         const apiKey = process.env.OPENROUTER_API_KEY;
 
@@ -53,6 +51,7 @@ app.post('/api/generate', async (req: Request, res: Response) => {
             return res.status(500).json({ success: false, error: 'OPENROUTER_API_KEY is missing' });
         }
 
+        // FIX: Combine the instructions and the existing HTML so the AI knows what to modify
         const fullPrompt = `${prompt}\n\nCURRENT HTML TO MODIFY:\n${currentHtml}`;
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -64,7 +63,7 @@ app.post('/api/generate', async (req: Request, res: Response) => {
             body: JSON.stringify({
                 model: "openai/gpt-4o", 
                 messages: [
-                    { role: "user", content: fullPrompt } 
+                    { role: "user", content: fullPrompt } // Send the combined text
                 ]
             })
         });
@@ -94,7 +93,7 @@ app.post('/api/ftp/list', async (req: any, res: any) => {
         const formattedList = list.map(item => ({
             id: `${path === '/' ? '' : path}/${item.name}`,
             name: item.name,
-            isFolder: item.type === 2, 
+            isFolder: item.type === 2, // 2 is a directory
             size: item.size,
             modifiedTime: item.modifiedAt
         }));
@@ -129,16 +128,11 @@ app.post('/api/ftp/read', async (req: any, res: any) => {
 
 // 3. CREATE A NEW FOLDER
 app.post('/api/ftp/mkdir', async (req: any, res: any) => {
-    const { host, user, password, folderPath, path, dirPath } = req.body;
-    // Catch whatever path property the frontend passes
-    const finalPath = folderPath || path || dirPath;
-    
-    if (!finalPath) return res.status(400).json({ success: false, error: "Target path required" });
-
+    const { host, user, password, folderPath } = req.body;
     const client = new ftp.Client();
     try {
         await client.access({ host, user, password, secure: false });
-        await client.ensureDir(finalPath);
+        await client.ensureDir(folderPath);
         res.json({ success: true });
     } catch (err: any) {
         res.status(500).json({ success: false, error: err.message });
@@ -147,49 +141,42 @@ app.post('/api/ftp/mkdir', async (req: any, res: any) => {
     }
 });
 
-// 4. DELETE A FILE OR FOLDER (CRASH PROOFED)
+// 4. DELETE A FILE OR FOLDER
 app.post('/api/ftp/delete', async (req: any, res: any) => {
-    // Catch every possible path variant the frontend might send
-    const { host, user, password, targetPath, path, filePath, dirPath, folderPath, isFolder } = req.body;
-    const finalPath = targetPath || path || filePath || dirPath || folderPath;
-
-    if (!finalPath) {
-        return res.status(400).json({ success: false, error: "Target path is required" });
-    }
-
+    const { host, user, password, targetPath, isFolder } = req.body;
     const client = new ftp.Client();
     try {
         await client.access({ host, user, password, secure: false });
         if (isFolder) {
-            await client.removeDir(finalPath);
+            await client.removeDir(targetPath);
         } else {
-            await client.remove(finalPath);
+            await client.remove(targetPath);
         }
         res.json({ success: true });
     } catch (err: any) {
-        console.error("FTP Delete Error:", err.message);
         res.status(500).json({ success: false, error: err.message });
     } finally {
         client.close();
     }
 });
 
-// 5. FTP FILE UPLOAD (BINARY SAFE via MULTER)
-// Injecting upload.single('file') middleware to process FormData natively
-app.post('/api/ftp/upload', upload.single('file'), async (req: any, res: any) => {
-    // Extract credentials and paths from the FormData body
-    const { host, user, password, filePath, targetPath, path } = req.body;
-    const finalPath = filePath || targetPath || path;
+// --- NEW: FTP IMAGE UPLOAD ENDPOINT ---
+app.post('/api/ftp/upload', async (req: any, res: any) => {
+    const { host, user, password, path = '/', filename, fileData } = req.body;
 
-    if (!host || !user || !password || !req.file || !finalPath) {
-        return res.status(400).json({ success: false, error: 'Missing required FTP credentials, path, or file data.' });
+    if (!host || !user || !password || !filename || !fileData) {
+        return res.status(400).json({ success: false, error: 'Missing required FTP credentials or file data.' });
     }
 
     const client = new ftp.Client();
 
     try {
-        // Create a readable stream directly from Multer's memory buffer
-        const stream = Readable.from(req.file.buffer);
+        // Strip the browser's Base64 MIME prefix
+        const base64String = fileData.replace(/^data:.*?;base64,/, '');
+        
+        // Convert to binary Buffer and then to a Readable Stream
+        const fileBuffer = Buffer.from(base64String, 'base64');
+        const stream = Readable.from(fileBuffer);
 
         // Connect to FTP
         await client.access({
@@ -199,17 +186,14 @@ app.post('/api/ftp/upload', upload.single('file'), async (req: any, res: any) =>
             secure: false 
         });
 
-        // Isolate the directory path to ensure it exists before uploading
-        const dirPath = finalPath.substring(0, finalPath.lastIndexOf('/')) || '/';
-        await client.ensureDir(dirPath);
-        
-        // Upload the binary stream directly to the target file path
-        await client.uploadFrom(stream, finalPath);
+        // Ensure directory exists and upload
+        await client.ensureDir(path);
+        await client.uploadFrom(stream, filename);
         client.close();
 
         // Construct public URL
         const baseUrl = host.toLowerCase().startsWith('ftp.') ? host.substring(4) : host;
-        const publicUrl = `https://${baseUrl}${finalPath}`;
+        const publicUrl = `https://${baseUrl}${path.endsWith('/') ? path : path + '/'}${filename}`;
 
         return res.json({ success: true, publicUrl: publicUrl });
 
