@@ -222,21 +222,6 @@ app.post('/api/ftp/upload', upload.single('file'), async (req: any, res: any) =>
     }
 });
 
-// Add this back to server.ts in sae-ftp-bridge
-app.post('/api/ftp/rename', async (req: any, res: any) => {
-    const { host, user, password, oldPath, newPath } = req.body;
-    const client = new ftp.Client();
-    try {
-        await client.access({ host, user, password, secure: false });
-        await client.rename(oldPath, newPath);
-        res.json({ success: true });
-    } catch (err: any) {
-        res.status(500).json({ success: false, error: err.message });
-    } finally {
-        client.close();
-    }
-});
-
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`SAE FTP bridge listening on port ${PORT}`);
