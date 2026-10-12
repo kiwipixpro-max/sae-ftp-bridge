@@ -84,25 +84,87 @@ app.post('/api/generate', async (req: Request, res: Response) => {
     }
 });
 
-// 1. LIST DIRECTORY CONTENTS
-app.post('/api/ftp/list', async (req: any, res: any) => {
-    const { host, user, password, path = '/' } = req.body;
+// 1. LIST DIRECTORY CONTENTS (WITH RECURSIVE SEARCH SUPPORT)
+app.post('/api/ftp/list', async (req: Request, res: Response) => {
+    const { host, user, password, path = '/', search } = req.body;
     const client = new ftp.Client();
+    
+    // Track if the frontend cancels the request to prevent ghost connections
+    let isAborted = false;
+    req.on('close', () => { isAborted = true; });
+
     try {
         await client.access({ host, user, password, secure: false });
-        const list = await client.list(path);
-        const formattedList = list.map(item => ({
-            id: `${path === '/' ? '' : path}/${item.name}`,
-            name: item.name,
-            isFolder: item.type === 2, 
-            size: item.size,
-            modifiedTime: item.modifiedAt
-        }));
-        res.json({ success: true, files: formattedList });
+
+        // 1A. IF SEARCH QUERY EXISTS: Perform a bounded recursive search
+        if (search && search.trim() !== '') {
+            const query = search.trim().toLowerCase();
+            const results: any[] = [];
+            const maxDepth = 3; // Keep depth small to prevent FTP timeouts
+            let folderCount = 0;
+
+            async function crawl(currentDir: string, depth: number) {
+                // Short-circuit if aborted by user, or if we hit safe depth limits
+                if (isAborted || depth > maxDepth || folderCount > 100) return;
+                
+                try {
+                    const list = await client.list(currentDir);
+                    folderCount++;
+                    
+                    for (const item of list) {
+                        if (isAborted) return;
+                        if (item.name === '.' || item.name === '..') continue;
+
+                        const itemPath = `${currentDir === '/' ? '' : currentDir}/${item.name}`;
+                        const isFolder = item.type === 2; // 2 corresponds to directory
+
+                        // Check if file/folder matches the search query
+                        if (item.name.toLowerCase().includes(query)) {
+                            results.push({
+                                id: itemPath,
+                                name: item.name,
+                                isFolder: isFolder,
+                                size: item.size,
+                                modifiedTime: item.modifiedAt
+                            });
+                        }
+
+                        // Recurse into subfolders
+                        if (isFolder) {
+                            await crawl(itemPath, depth + 1);
+                        }
+                    }
+                } catch (err) {
+                    // Ignore permission/read errors on specific subfolders and continue
+                }
+            }
+
+            await crawl(path, 0);
+            return res.json({ success: true, files: results });
+        } 
+        
+        // 1B. DEFAULT: Normal Directory Listing (No Search)
+        else {
+            const list = await client.list(path);
+            const formattedList = list.map(item => ({
+                id: `${path === '/' ? '' : path}/${item.name}`,
+                name: item.name,
+                isFolder: item.type === 2, 
+                size: item.size,
+                modifiedTime: item.modifiedAt
+            }));
+            return res.json({ success: true, files: formattedList });
+        }
     } catch (err: any) {
-        res.status(500).json({ success: false, error: err.message });
+        console.error("FTP List Error:", err.message);
+        // Only return an error if the user didn't intentionally cancel the request
+        if (!isAborted) {
+            return res.status(500).json({ success: false, error: err.message });
+        }
     } finally {
-        client.close();
+        if (!client.closed) {
+            client.close();
+        }
     }
 });
 
