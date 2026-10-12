@@ -88,10 +88,6 @@ app.post('/api/generate', async (req: Request, res: Response) => {
 app.post('/api/ftp/list', async (req: Request, res: Response) => {
     const { host, user, password, path = '/', search } = req.body;
     const client = new ftp.Client();
-    
-    // Track if the frontend cancels the request to prevent ghost connections
-    let isAborted = false;
-    req.on('close', () => { isAborted = true; });
 
     try {
         await client.access({ host, user, password, secure: false });
@@ -100,23 +96,22 @@ app.post('/api/ftp/list', async (req: Request, res: Response) => {
         if (search && search.trim() !== '') {
             const query = search.trim().toLowerCase();
             const results: any[] = [];
-            const maxDepth = 3; // Keep depth small to prevent FTP timeouts
+            const maxDepth = 4; // Safe depth to prevent FTP timeouts
             let folderCount = 0;
 
             async function crawl(currentDir: string, depth: number) {
-                // Short-circuit if aborted by user, or if we hit safe depth limits
-                if (isAborted || depth > maxDepth || folderCount > 100) return;
+                // Stop if we hit depth limits or traverse too many folders
+                if (depth > maxDepth || folderCount > 150) return;
                 
                 try {
                     const list = await client.list(currentDir);
                     folderCount++;
                     
                     for (const item of list) {
-                        if (isAborted) return;
                         if (item.name === '.' || item.name === '..') continue;
 
                         const itemPath = `${currentDir === '/' ? '' : currentDir}/${item.name}`;
-                        const isFolder = item.type === 2; // 2 corresponds to directory
+                        const isFolder = item.type === 2; // 2 corresponds to directory in basic-ftp
 
                         // Check if file/folder matches the search query
                         if (item.name.toLowerCase().includes(query)) {
@@ -134,8 +129,9 @@ app.post('/api/ftp/list', async (req: Request, res: Response) => {
                             await crawl(itemPath, depth + 1);
                         }
                     }
-                } catch (err) {
-                    // Ignore permission/read errors on specific subfolders and continue
+                } catch (err: any) {
+                    // Log the error but safely continue crawling other folders
+                    console.warn(`[FTP Search] Skipped ${currentDir}:`, err.message);
                 }
             }
 
@@ -157,10 +153,7 @@ app.post('/api/ftp/list', async (req: Request, res: Response) => {
         }
     } catch (err: any) {
         console.error("FTP List Error:", err.message);
-        // Only return an error if the user didn't intentionally cancel the request
-        if (!isAborted) {
-            return res.status(500).json({ success: false, error: err.message });
-        }
+        return res.status(500).json({ success: false, error: err.message });
     } finally {
         if (!client.closed) {
             client.close();
